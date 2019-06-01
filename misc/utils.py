@@ -9,6 +9,7 @@ import numpy as np
 import torch.optim as optim
 import os
 import misc.resnet as resnet
+import random
 
 import six
 from six.moves import cPickle
