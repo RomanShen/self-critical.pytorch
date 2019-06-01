@@ -84,22 +84,20 @@ def train(opt):
         best_val_score = infos.get('best_val_score', None)
 
     cnn_model = utils.build_cnn(opt)
-    cnn_modelcnn_model
+    cnn_model = cnn_model.cuda()
 
+    dp_cnn_model = torch.nn.DataParallel(cnn_model)
 
-.cuda()
-dp_cnn_model = torch.nn.DataParallel(cnn_model)
+    model = models.setup(opt).cuda()
+    dp_model = torch.nn.DataParallel(model)
+    lw_model = LossWrapper(model, opt)
+    dp_lw_model = torch.nn.DataParallel(lw_model)
 
-model = models.setup(opt).cuda()
-dp_model = torch.nn.DataParallel(model)
-lw_model = LossWrapper(model, opt)
-dp_lw_model = torch.nn.DataParallel(lw_model)
+    epoch_done = True
+    # Assure in training mode
+    dp_lw_model.train()
 
- epoch_done = True
-  # Assure in training mode
-  dp_lw_model.train()
-
-   if opt.noamopt:
+    if opt.noamopt:
         assert opt.caption_model == 'transformer', 'noamopt can only work with transformer'
         optimizer = utils.get_std_opt(
             model, factor=opt.noamopt_factor, warmup=opt.noamopt_warmup)
@@ -214,8 +212,10 @@ dp_lw_model = torch.nn.DataParallel(lw_model)
             att_feats = dp_cnn_model(images).permute(0, 2, 3, 1)
             fc_feats = att_feats.mean(2).mean(1)
 
-            att_feats = att_feats.unsqueeze(1).expand(*((att_feats.size(0), opt.seq_per_img,) + att_feats.size()[1:])).contiguous().view(*((att_feats.size(0) * opt.seq_per_img,) + att_feats.size()[1:]))
-            fc_feats = fc_feats.unsqueeze(1).expand(*((fc_feats.size(0), opt.seq_per_img,) + fc_feats.size()[1:])).contiguous().view(*((fc_feats.size(0) * opt.seq_per_img,) + fc_feats.size()[1:]))
+            att_feats = att_feats.unsqueeze(1).expand(*((att_feats.size(0), opt.seq_per_img,) + att_feats.size(
+            )[1:])).contiguous().view(*((att_feats.size(0) * opt.seq_per_img,) + att_feats.size()[1:]))
+            fc_feats = fc_feats.unsqueeze(1).expand(*((fc_feats.size(0), opt.seq_per_img,) + fc_feats.size(
+            )[1:])).contiguous().view(*((fc_feats.size(0) * opt.seq_per_img,) + fc_feats.size()[1:]))
 
             optimizer.zero_grad()
             if opt.finetune_cnn_after != -1 and epoch >= opt.finetune_cnn_after:
