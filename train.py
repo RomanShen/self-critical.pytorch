@@ -209,8 +209,11 @@ def train(opt):
             tmp = [_ if _ is None else _.cuda() for _ in tmp]
             fc_feats, att_feats, labels, masks, att_masks, images = tmp
 
-            att_feats = dp_cnn_model(images).permute(0, 2, 3, 1)
-            fc_feats = att_feats.mean(2).mean(1)
+            att_feats = dp_cnn_model(images)
+            fc_feats = att_feats.mean(3).mean(2)
+            att_feats = torch.nn.functional.adaptive_avg_pool2d(att_feats, [4, 4]).permute(0, 2, 3, 1)
+            # att_feats = dp_cnn_model(images).permute(0, 2, 3, 1)
+            # fc_feats = att_feats.mean(2).mean(1)
 
             att_feats = att_feats.unsqueeze(1).expand(*((att_feats.size(0), opt.seq_per_img,) + att_feats.size(
             )[1:])).contiguous().view(*((att_feats.size(0) * opt.seq_per_img,) + att_feats.size()[1:]))
