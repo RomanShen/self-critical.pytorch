@@ -49,7 +49,7 @@ def main(params):
     for i, img in enumerate(imgs):
         # load the image
         I = imread(os.path.join(
-            params['images_root'], img['filepath'], img['filename']))
+            params['images_root'], img['filename']))
         try:
             Ir = imresize(I, (256, 256))
         except:
