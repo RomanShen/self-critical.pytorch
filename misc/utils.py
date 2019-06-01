@@ -8,7 +8,7 @@ import torch.nn as nn
 import numpy as np
 import torch.optim as optim
 import os
-import misc.resnet as resnet
+import misc.resnet2 as resnet
 import random
 
 import six
