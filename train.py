@@ -200,18 +200,27 @@ dp_lw_model = torch.nn.DataParallel(lw_model)
             # Load data from train split (0)
             data = loader.get_batch('train')
             data['images'] = utils.prepro_images(data['images'], True)
-
+            torch.cuda.synchronize()
             print('Read data:', time.time() - start)
 
             torch.cuda.synchronize()
             start = time.time()
 
             tmp = [data['fc_feats'], data['att_feats'],
-                   data['labels'], data['masks'], data['att_masks']]
+                   data['labels'], data['masks'], data['att_masks'], data['images']]
             tmp = [_ if _ is None else _.cuda() for _ in tmp]
-            fc_feats, att_feats, labels, masks, att_masks = tmp
+            fc_feats, att_feats, labels, masks, att_masks, images = tmp
+
+            att_feats = dp_cnn_model(images).permute(0, 2, 3, 1)
+            fc_feats = att_feats.mean(2).mean(1)
+
+            att_feats = att_feats.unsqueeze(1).expand(*((att_feats.size(0), opt.seq_per_img,) + att_feats.size()[1:])).contiguous().view(*((att_feats.size(0) * opt.seq_per_img,) + att_feats.size()[1:]))
+            fc_feats = fc_feats.unsqueeze(1).expand(*((fc_feats.size(0), opt.seq_per_img,) + fc_feats.size()[1:])).contiguous().view(*((fc_feats.size(0) * opt.seq_per_img,) + fc_feats.size()[1:]))
 
             optimizer.zero_grad()
+            if opt.finetune_cnn_after != -1 and epoch >= opt.finetune_cnn_after:
+                cnn_optimizer.zero_grad()
+
             model_out = dp_lw_model(fc_feats, att_feats, labels, masks, att_masks,
                                     data['gts'], torch.arange(0, len(data['gts'])), sc_flag)
 
@@ -220,6 +229,11 @@ dp_lw_model = torch.nn.DataParallel(lw_model)
             loss.backward()
             utils.clip_gradient(optimizer, opt.grad_clip)
             optimizer.step()
+
+            if opt.finetune_cnn_after != -1 and epoch >= opt.finetune_cnn_after:
+                utils.clip_gradient(cnn_optimizer, opt.grad_clip)
+                cnn_optimizer.step()
+
             train_loss = loss.item()
             torch.cuda.synchronize()
             end = time.time()
