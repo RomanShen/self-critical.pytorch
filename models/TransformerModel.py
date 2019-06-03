@@ -40,14 +40,16 @@ class EncoderDecoder(nn.Module):
         "Take in and process masked src and target sequences."
         # return self.decode(self.encode(src, src_mask), src_mask,
         #                     tgt, tgt_mask)
-        tgt = self.insert_fc(fc, self.tgt_embed(tgt))
-        tgt_mask = self.pad_tgt_mask(tgt_mask)
-        return self.decode(src, src_mask, tgt, tgt_mask)
+        # tgt = self.insert_fc(fc, self.tgt_embed(tgt))
+        # tgt_mask = self.pad_tgt_mask(tgt_mask)
+        return self.decode(src, src_mask, tgt, tgt_mask, fc)
     
     def encode(self, src, src_mask):
         return self.encoder(self.src_embed(src), src_mask)
     
-    def decode(self, memory, src_mask, tgt, tgt_mask):
+    def decode(self, memory, src_mask, tgt, tgt_mask, fc):
+        tgt = self.insert_fc(fc, self.tgt_embed(tgt))
+        tgt_mask = self.pad_tgt_mask(tgt_mask)
         return self.decoder(tgt, memory, src_mask, tgt_mask)
 
     def insert_fc(self, fc_feats, tgt_feats):
@@ -326,9 +328,10 @@ class TransformerModel(AttModel):
     def _prepare_feature(self, fc_feats, att_feats, att_masks):
 
         att_feats, seq, att_masks, seq_mask = self._prepare_feature_forward(att_feats, att_masks)
-        memory = self.model.encode(att_feats, att_masks)
+        memory = att_feats
+        fc_feats = pack_wrapper(self.att_embed, fc_feats, None)
 
-        return fc_feats[...,:1], att_feats[...,:1], memory, att_masks
+        return fc_feats, att_feats, memory, att_masks
 
     def _prepare_feature_forward(self, att_feats, att_masks=None, seq=None):
         att_feats, att_masks = self.clip_att(att_feats, att_masks)
@@ -357,7 +360,7 @@ class TransformerModel(AttModel):
         fc_feats = pack_wrapper(self.att_embed, fc_feats, None)
 
         out = self.model(att_feats, seq, att_masks, seq_mask, fc_feats)
-        out = out[:, :31, :]
+        out = out[:, :-1, :]
 
         outputs = self.model.generator(out)
         return outputs
@@ -374,5 +377,5 @@ class TransformerModel(AttModel):
         out = self.model.decode(memory, mask, 
                                ys, 
                                subsequent_mask(ys.size(1))
-                                        .to(memory.device))
-        return out[:, -1], [ys.unsqueeze(0)]
+                                        .to(memory.device), fc_feats_ph)
+        return out[:, -2], [ys.unsqueeze(0)]

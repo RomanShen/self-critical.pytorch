@@ -68,7 +68,7 @@ def language_eval(dataset, preds, model_id, split):
 
     return out
 
-def eval_split(model, crit, loader, eval_kwargs={}):
+def eval_split(cnn_model, model, crit, loader, eval_kwargs={}):
     verbose = eval_kwargs.get('verbose', True)
     verbose_beam = eval_kwargs.get('verbose_beam', 1)
     verbose_loss = eval_kwargs.get('verbose_loss', 1)
@@ -81,6 +81,7 @@ def eval_split(model, crit, loader, eval_kwargs={}):
     os.environ["REMOVE_BAD_ENDINGS"] = str(remove_bad_endings) # Use this nasty way to make other code clean since it's a global configuration
 
     # Make sure in the evaluation mode
+    cnn_model.eval()
     model.eval()
 
     loader.reset_iterator(split)
@@ -92,28 +93,47 @@ def eval_split(model, crit, loader, eval_kwargs={}):
     predictions = []
     while True:
         data = loader.get_batch(split)
+        data['images'] = utils.prepro_images(data['images'], False)
         n = n + loader.batch_size
 
         if data.get('labels', None) is not None and verbose_loss:
             # forward the model to get loss
-            tmp = [data['fc_feats'], data['att_feats'], data['labels'], data['masks'], data['att_masks']]
+            tmp = [data['fc_feats'], data['att_feats'], data['labels'], data['masks'], data['att_masks'], data['images']]
             tmp = [_.cuda() if _ is not None else _ for _ in tmp]
-            fc_feats, att_feats, labels, masks, att_masks = tmp
+            fc_feats, att_feats, labels, masks, att_masks, images = tmp
 
             with torch.no_grad():
+                att_feats = cnn_model(images)
+                fc_feats = att_feats.mean(3).mean(2)
+                att_feats = torch.nn.functional.adaptive_avg_pool2d(att_feats, [4, 4]).permute(0, 2, 3, 1)
+
+                att_feats = _att_feats = att_feats.unsqueeze(1).expand(*((att_feats.size(0), 5,) + att_feats.size(
+                )[1:])).contiguous().view((att_feats.size(0) * 5), -1, att_feats.size()[-1])
+                fc_feats = _fc_feats = fc_feats.unsqueeze(1).expand(*((fc_feats.size(0), 5,) + fc_feats.size(
+                )[1:])).contiguous().view(*((fc_feats.size(0) * 5,) + fc_feats.size()[1:]))
+
                 loss = crit(model(fc_feats, att_feats, labels, att_masks), labels[:,1:], masks[:,1:]).item()
             loss_sum = loss_sum + loss
             loss_evals = loss_evals + 1
 
         # forward the model to also get generated samples for each image
         # Only leave one feature for each image, in case duplicate sample
-        tmp = [data['fc_feats'][np.arange(loader.batch_size) * loader.seq_per_img], 
-            data['att_feats'][np.arange(loader.batch_size) * loader.seq_per_img],
-            data['att_masks'][np.arange(loader.batch_size) * loader.seq_per_img] if data['att_masks'] is not None else None]
+        tmp = [_fc_feats[np.arange(loader.batch_size) * loader.seq_per_img],
+               _att_feats[np.arange(loader.batch_size) * loader.seq_per_img],
+               data['att_masks'][np.arange(loader.batch_size) * loader.seq_per_img] if data['att_masks'] is not None else None]
         tmp = [_.cuda() if _ is not None else _ for _ in tmp]
         fc_feats, att_feats, att_masks = tmp
         # forward the model to also get generated samples for each image
         with torch.no_grad():
+            # att_feats = cnn_model(images)
+            # fc_feats = att_feats.mean(3).mean(2)
+            # att_feats = torch.nn.functional.adaptive_avg_pool2d(att_feats, [4, 4]).permute(0, 2, 3, 1)
+            #
+            # att_feats = att_feats.unsqueeze(1).expand(*((att_feats.size(0), 5,) + att_feats.size(
+            # )[1:])).contiguous().view((att_feats.size(0) * 5), -1, att_feats.size()[-1])
+            # fc_feats = fc_feats.unsqueeze(1).expand(*((fc_feats.size(0), 5,) + fc_feats.size(
+            # )[1:])).contiguous().view(*((fc_feats.size(0) * 5,) + fc_feats.size()[1:]))
+
             seq = model(fc_feats, att_feats, att_masks, opt=eval_kwargs, mode='sample')[0].data
         
         # Print beam search

@@ -78,7 +78,7 @@ def parse_opt():
     # Sample related
     parser.add_argument('--beam_size', type=int, default=1,
                         help='used when sample_max = 1, indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')
-    parser.add_argument('--max_length', type=int, default=20,
+    parser.add_argument('--max_length', type=int, default=30,
                         help='Maximum length during sampling')
     parser.add_argument('--length_penalty', type=str, default='',
                         help='wu_X or avg_X, X is the alpha')
