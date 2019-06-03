@@ -322,6 +322,7 @@ class TransformerModel(AttModel):
 
     def _forward(self, fc_feats, att_feats, seq, att_masks=None):
         att_feats, seq, att_masks, seq_mask = self._prepare_feature_forward(att_feats, att_masks, seq)
+        fc_feats = pack_wrapper(self.att_embed, fc_feats, None)
 
         out = self.model(att_feats, seq, att_masks, seq_mask)
 
