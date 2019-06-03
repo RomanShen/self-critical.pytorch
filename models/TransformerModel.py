@@ -134,11 +134,29 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.layers = clones(layer, N)
         self.norm = LayerNorm(layer.size)
+        self.alpha = nn.Parameter(torch.Tensor(6), requires_grad=True)
+        self.gamma = nn.Parameter(torch.Tensor(1, 1), requires_grad=True)
+        torch.nn.init.constant(self.alpha, 1.0)
+        torch.nn.init.constant(self.gamma, 1.0)
         
     def forward(self, x, memory, src_mask, tgt_mask):
+        x_list = []
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask)
-        return self.norm(x)
+            x_list.append(x)
+        # x = torch.cat(x_list, dim=0)
+        return self.norm(self.linear_sum(x_list, self.alpha, self.gamma))
+
+    def linear_sum(self, x, alpha, gamma):
+        alpha_softmax = F.softmax(alpha)
+        for i in range(len(x)):
+            t = x[i] * alpha_softmax[i] * gamma
+            if i == 0:
+                res = t
+            else:
+                res += t
+        return res
+
 
 class DecoderLayer(nn.Module):
     "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
