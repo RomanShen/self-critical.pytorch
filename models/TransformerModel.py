@@ -36,16 +36,30 @@ class EncoderDecoder(nn.Module):
         self.tgt_embed = tgt_embed
         self.generator = generator
         
-    def forward(self, src, tgt, src_mask, tgt_mask):
+    def forward(self, src, tgt, src_mask, tgt_mask, fc):
         "Take in and process masked src and target sequences."
-        return self.decode(self.encode(src, src_mask), src_mask,
-                            tgt, tgt_mask)
+        # return self.decode(self.encode(src, src_mask), src_mask,
+        #                     tgt, tgt_mask)
+        tgt = self.insert_fc(fc, self.tgt_embed(tgt))
+        tgt_mask = self.pad_tgt_mask(tgt_mask)
+        return self.decode(src, src_mask, tgt, tgt_mask)
     
     def encode(self, src, src_mask):
         return self.encoder(self.src_embed(src), src_mask)
     
     def decode(self, memory, src_mask, tgt, tgt_mask):
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+        return self.decoder(tgt, memory, src_mask, tgt_mask)
+
+    def insert_fc(self, fc_feats, tgt_feats):
+        fc_feats = fc_feats.unsqueeze(1)
+        return torch.cat((fc_feats, tgt_feats), dim=1)
+
+    def pad_tgt_mask(self, tgt_mask):
+        pad = torch.ones((tgt_mask.size(0), tgt_mask.size(1), 1), dtype=tgt_mask.dtype, device=tgt_mask.device)
+        res = torch.cat((pad, tgt_mask), dim=-1)
+        res = torch.cat((res, res[:, -1, :].unsqueeze(1)), dim=1)
+        return res
+
 
 class Generator(nn.Module):
     "Define standard linear + softmax generation step."
@@ -324,7 +338,8 @@ class TransformerModel(AttModel):
         att_feats, seq, att_masks, seq_mask = self._prepare_feature_forward(att_feats, att_masks, seq)
         fc_feats = pack_wrapper(self.att_embed, fc_feats, None)
 
-        out = self.model(att_feats, seq, att_masks, seq_mask)
+        out = self.model(att_feats, seq, att_masks, seq_mask, fc_feats)
+        out = out[:, :31, :]
 
         outputs = self.model.generator(out)
         return outputs
